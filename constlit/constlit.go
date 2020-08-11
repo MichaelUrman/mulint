@@ -69,7 +69,7 @@ func (i imports) Load(eval func(*ast.Ident) (constant.Value, error)) error {
 			}
 			c := i[importpath(obj.Pkg().Path())]
 			t := obj.Type()
-			if !untyped(t) {
+			if !untyped(t) && !builtin(t) {
 				c.Add(id, t, v)
 			}
 		}
@@ -422,4 +422,9 @@ func (cl *constLit) unlessTimes(stack []ast.Node, imp string) bool {
 func untyped(o types.Type) bool {
 	b, ok := o.(*types.Basic)
 	return ok && b.Kind() >= types.UntypedBool && b.Kind() <= types.UntypedNil
+}
+
+func builtin(o types.Type) bool {
+	_, ok := o.(*types.Basic)
+	return ok
 }
