@@ -1,0 +1,14 @@
+// Package b tests simple literal replacements with a renamed import
+package b
+
+import zz "image/png"
+
+var nah = -2
+
+var bs zz.CompressionLevel = zz.BestSpeed // want "Replace `-2` with `zz.BestSpeed`"
+
+func Compress(level zz.CompressionLevel) {}
+
+func main() {
+	Compress(zz.BestCompression) // want "Replace `-3` with `zz.BestCompression`"
+}
