@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -16,32 +17,64 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	var reterr error
 	for _, file := range pass.Files {
-		ast.Inspect(file, func(n ast.Node) bool {
-			switch n := n.(type) {
-			case *ast.FuncLit:
-				match, err := matchFn(pass, n)
-				if err != nil {
-					var note errDiagnostic
-					if !errors.As(err, &note) {
-						reterr = err
-						return false
-					}
-					//fmt.Printf("methodlambda: %v @ %-s\n", err, sourcer{pass.Fset, n})
-				}
-				if match != "" {
-					pass.Reportf(n.Pos(), "replace `%s` with `%s`", sourcer{pass.Fset, n.Type}, match)
-				}
-				return false
-			}
-			return true
-		})
+		ml := methodLambda{Pass: pass}
+		ast.Inspect(file, ml.inspect)
+		if ml.err != nil {
+			return nil, ml.err
+		}
 	}
-	return nil, reterr
+	return nil, nil
 }
 
-func matchFn(pass *analysis.Pass, fn *ast.FuncLit) (string, error) {
+type methodLambda struct {
+	*analysis.Pass
+	imports []*ast.ImportSpec
+	err     error
+}
+
+func (ml *methodLambda) inspect(n ast.Node) bool {
+	switch n := n.(type) {
+	case *ast.ImportSpec:
+		ml.imports = append(ml.imports, n)
+	case *ast.FuncLit:
+		match, err := ml.matchFn(n)
+		if err != nil {
+			var note errDiagnostic
+			if !errors.As(err, &note) {
+				ml.err = err
+				return false
+			}
+			//fmt.Printf("methodlambda: %v @ %-s\n", err, sourcer{ml.Fset, n})
+		}
+		if match != "" {
+			ml.Reportf(n.Pos(), "replace `%s` with `%s`", sourcer{ml.Fset, n.Type}, match)
+		}
+		return false
+	}
+	return true
+}
+
+func (ml *methodLambda) qualify(pkg *types.Package) string {
+	if pkg == ml.Pkg {
+		return ""
+	}
+	for _, spec := range ml.imports {
+		path := strings.Trim(spec.Path.Value, `"`)
+		if path == pkg.Path() {
+			if spec.Name == nil {
+				i := strings.LastIndex(path, "/")
+				if i == -1 {
+					return path
+				}
+				return path[i+1:]
+			}
+		}
+	}
+	return pkg.Path()
+}
+
+func (ml *methodLambda) matchFn(fn *ast.FuncLit) (string, error) {
 	if fn.Body == nil {
 		return "", nil
 	}
@@ -52,10 +85,10 @@ func matchFn(pass *analysis.Pass, fn *ast.FuncLit) (string, error) {
 			if len(stmt.Results) != 1 {
 				return "", nil
 			}
-			return matchCall(pass, fn, stmt.Results[0], true)
+			return ml.matchCall(fn, stmt.Results[0], true)
 
 		case *ast.ExprStmt:
-			return matchCall(pass, fn, stmt.X, false)
+			return ml.matchCall(fn, stmt.X, false)
 
 		default:
 			return "", nil
@@ -67,7 +100,7 @@ func matchFn(pass *analysis.Pass, fn *ast.FuncLit) (string, error) {
 	return "", nil
 }
 
-func matchCall(pass *analysis.Pass, fn *ast.FuncLit, call ast.Expr, returned bool) (string, error) {
+func (ml *methodLambda) matchCall(fn *ast.FuncLit, call ast.Expr, returned bool) (string, error) {
 	if fnHasResults := fn.Type.Results != nil && len(fn.Type.Results.List) > 0; fnHasResults != returned {
 		return "", diag("return mismatches of results: %v vs %v", returned, !returned)
 	}
@@ -76,7 +109,7 @@ func matchCall(pass *analysis.Pass, fn *ast.FuncLit, call ast.Expr, returned boo
 	case *ast.CallExpr:
 		switch fun := call.Fun.(type) {
 		case *ast.SelectorExpr:
-			return matchParamsToArgs(pass, fn, fun, append([]ast.Expr{fun.X}, call.Args...), returned)
+			return ml.matchParams(fn, fun, append([]ast.Expr{fun.X}, call.Args...), returned)
 		}
 	default:
 		// ast.Print(pass.Fset, call)
@@ -84,9 +117,12 @@ func matchCall(pass *analysis.Pass, fn *ast.FuncLit, call ast.Expr, returned boo
 	return "", diag("unexpected call type %T", call)
 }
 
-func matchParamsToArgs(pass *analysis.Pass, fn *ast.FuncLit, sel *ast.SelectorExpr, args []ast.Expr, returned bool) (string, error) {
+func (ml *methodLambda) matchParams(fn *ast.FuncLit, sel *ast.SelectorExpr, args []ast.Expr, returned bool) (string, error) {
 	i := 0
-	seln := pass.TypesInfo.Selections[sel]
+	seln := ml.TypesInfo.Selections[sel]
+	if seln == nil {
+		return "", diag("selection not found")
+	}
 	meth := seln.Obj()
 	sig := meth.Type().(*types.Signature)
 	_, ptrRecv := sig.Recv().Type().(*types.Pointer)
@@ -111,7 +147,7 @@ func matchParamsToArgs(pass *analysis.Pass, fn *ast.FuncLit, sel *ast.SelectorEx
 					case *ast.Field:
 						for j, name := range decl.Names {
 							if name.Name == arg.Name && name.Obj != arg.Obj {
-								ast.Print(pass.Fset, arg)
+								ast.Print(ml.Fset, arg)
 								return "", diag("argument object %v.%v didn't match param object", i, j)
 							}
 						}
@@ -119,7 +155,7 @@ func matchParamsToArgs(pass *analysis.Pass, fn *ast.FuncLit, sel *ast.SelectorEx
 						return "", diag("unexpected decl type %T", decl)
 					}
 				}
-				tv := pass.TypesInfo.Types[param.Type]
+				tv := ml.TypesInfo.Types[param.Type]
 				if tv.Type == nil {
 					return "", diag("no type for param %v", i)
 				}
@@ -138,9 +174,9 @@ func matchParamsToArgs(pass *analysis.Pass, fn *ast.FuncLit, sel *ast.SelectorEx
 	if i == len(args) {
 		switch t := seln.Recv().(type) {
 		case *types.Named:
-			return types.TypeString(t, types.RelativeTo(pass.Pkg)) + "." + sel.Sel.Name, nil
+			return types.TypeString(t, ml.qualify) + "." + sel.Sel.Name, nil
 		case *types.Pointer:
-			return "(" + types.TypeString(t, types.RelativeTo(pass.Pkg)) + ")." + sel.Sel.Name, nil
+			return "(" + types.TypeString(t, ml.qualify) + ")." + sel.Sel.Name, nil
 		default:
 			return "", fmt.Errorf("unexpected selection recv %T", t)
 		}
