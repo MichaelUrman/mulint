@@ -19,3 +19,10 @@ MethodLambda is an analysis package that identifies anonymous functions that cou
     bar := quux.bar
     baz := (*quux).baz
 ```
+
+## Notes
+
+It's not always clear whether using a method expression is a win over the anonymous function it replaces, for at least two reasons.
+
+- It's easy to not have learned the method expression syntax
+- The syntax for a pointer receiver, `(*Type).Method`, is a bit clunky
