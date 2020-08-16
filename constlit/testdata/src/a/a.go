@@ -3,12 +3,12 @@ package a
 
 import "image/png"
 
-var nah = -2
+var anah = -2
 
-var bs png.CompressionLevel = -2 // want "Replace `-2` with `png.BestSpeed`"
+var abs png.CompressionLevel = -2 // want "Replace `-2` with `png.BestSpeed`"
 
-func Compress(level png.CompressionLevel) {}
+func aCompress(level png.CompressionLevel) {}
 
-func main() {
-	Compress(-3) // want "Replace `-3` with `png.BestCompression`"
+func amain() {
+	aCompress(-3) // want "Replace `-3` with `png.BestCompression`"
 }

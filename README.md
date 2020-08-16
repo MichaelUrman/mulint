@@ -17,8 +17,6 @@ Then invoke like any other `golang.org/x/tools/go/analysis` checker. To run all 
 
 ## Troubleshooting Notes
 
-Note that constlit's use of `golang.org/x/tools/go/loader` can get quite memory hungry, especially on larger sets of packages. Consider running on as small a subset of packages at a time as you find comfortable.
-
 If you see errors including `could not import package C`, install gcc. This appears to be a bug or limitation in `golang.org/x/tools/go/analysis` as of when this was originally written. Once addressed, I'm open to fixing here, but expect it would just work.
 
 (See [dominikh/go-tools#52](https://github.com/dominikh/go-tools/issues/572) and [golang/go#34229](https://github.com/golang/go/issues/34229) for updates.)

@@ -1,3 +1,5 @@
+// want package:`[&].(Zero=0.|One=1.|Two=2.|Four=4.|Eight=8.){5}`
+
 // Package c tests local constants and literals in more complex positions
 package c
 

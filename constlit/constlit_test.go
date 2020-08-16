@@ -9,5 +9,5 @@ import (
 
 func Test(t *testing.T) {
 	testdata := analysistest.TestData()
-	analysistest.RunWithSuggestedFixes(t, testdata, constlit.Analyzer, "a", "b", "c", "d")
+	analysistest.RunWithSuggestedFixes(t, testdata, constlit.Analyzer, "a", "b", "c")
 }

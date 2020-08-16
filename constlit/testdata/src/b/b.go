@@ -1,14 +1,11 @@
-// Package b tests simple literal replacements with a renamed import
+// Package b tests exceptions such as 1*time.Second
 package b
 
-import zz "image/png"
+import "time"
 
-var nah = -2
+var T time.Duration = 1 // want "Replace `1` with `time.Nanosecond`"
+var U time.Duration = 1 * time.Second
+var V = time.Second * 1
+var W = 3*time.Second + 1 // want "Replace `1` with `time.Nanosecond`"
 
-var bs zz.CompressionLevel = -2 // want "Replace `-2` with `zz.BestSpeed`"
-
-func Compress(level zz.CompressionLevel) {}
-
-func main() {
-	Compress(-3) // want "Replace `-3` with `zz.BestCompression`"
-}
+var A int = 2 // OK; don't use time.Wed
