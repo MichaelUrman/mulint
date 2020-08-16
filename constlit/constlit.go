@@ -223,7 +223,7 @@ func check(pass *analysis.Pass, constants []types.Object, n ast.Expr, stack []as
 				fix = fmt.Sprintf("Consider importing \"%s\" and replacing `%s` with `%s.%s`", obj.Pkg().Path(), orig, obj.Pkg().Name(), obj.Name())
 			}
 		}
-		if timesTyped(stack, obj.Pkg(), pass.TypesInfo) {
+		if timesTypedConstant(stack, obj.Type(), pass.TypesInfo) {
 			return
 		}
 		pass.Report(analysis.Diagnostic{
@@ -251,8 +251,8 @@ func typeof(stack []ast.Node, ti *types.Info) types.Type {
 	return nil
 }
 
-// timesTyped returns true if the leaf-most literal is multiplied by something from the package whose constant we would otherwise replace it with. This prevents recommending `1 * time.Second` become `time.Nanosecond * times.Second`.
-func timesTyped(stack []ast.Node, pkg *types.Package, ti *types.Info) bool {
+// timesTypedConstant returns true if the leaf-most literal is multiplied by a constant of the type we need. This prevents recommending `1 * time.Second` become `time.Nanosecond * times.Second`.
+func timesTypedConstant(stack []ast.Node, want types.Type, ti *types.Info) bool {
 	for n := len(stack); n > 0; n-- {
 		switch x := stack[n-1].(type) {
 		case *ast.UnaryExpr:
@@ -271,23 +271,26 @@ func timesTyped(stack []ast.Node, pkg *types.Package, ti *types.Info) bool {
 			// prevent, e.g.,  1 * time.Second from flagging 1 -> time.Nanosecond
 			switch o := other.(type) {
 			case *ast.Ident:
-				if obj := ti.Uses[o]; obj != nil && obj.Pkg() == pkg {
-					return true
-				}
+				return isTypedConstant(ti.Uses[o], want)
 
 			case *ast.SelectorExpr:
-				if n, ok := ti.TypeOf(o).(*types.Named); ok && n.Obj() != nil && n.Obj().Pkg() == pkg {
-					return true
+				if sel := ti.Selections[o]; sel != nil {
+					return isTypedConstant(sel.Obj(), want)
 				}
-				if sel := ti.Selections[o]; sel != nil && sel.Obj().Pkg() == pkg {
-					return true
-				}
+				return isTypedConstant(ti.Uses[o.Sel], want)
 			}
-
-			return false
+			break
 		}
 	}
 	return false
+}
+
+func isTypedConstant(obj types.Object, want types.Type) bool {
+	if want != nil && obj.Type() != want {
+		return false
+	}
+	_, ok := obj.(*types.Const)
+	return ok
 }
 
 func untyped(o types.Type) bool {
