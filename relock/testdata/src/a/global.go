@@ -30,17 +30,17 @@ func (c *pkgMutex) Good4() { // want Good4:`a:pkgMu:"Ll"`
 
 func (c *pkgMutex) Bad1() { // want Bad1:`a:pkgMu:"L"`
 	pkgMu.Lock()
-	pkgMu.Lock()
+	pkgMu.Lock() // want `Locks locked a:pkgMu`
 }
 
 func (c *pkgMutex) Bad2() { // want Bad2:`a:pkgMu:"L"`
 	pkgMu.Lock()
-	c.lock()
+	c.lock() // want `Locks locked a:pkgMu`
 }
 
 func (c *pkgMutex) Bad3() { // want Bad3:`a:pkgMu:"L"`
 	c.lock()
-	c.lock()
+	c.lock() // want `Locks locked a:pkgMu`
 }
 
 // iffy locks and unlocks. It's called iffy due to its author's preference to

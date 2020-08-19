@@ -69,8 +69,6 @@ type LockInfo string
 
 func (li LockInfo) String() string { return `"` + string(li) + `"` }
 
-func (a LockInfo) Then(b LockInfo) LockInfo { return a + b }
-
 func (a LockInfo) Simplified() LockInfo {
 	simplify := func(a LockInfo, chars string) LockInfo {
 		first := strings.IndexAny(string(a), chars)
@@ -130,6 +128,13 @@ func classify(pass *analysis.Pass) map[*types.Func]*FuncInfo {
 		classifyFunc(pass, m, fn, fi, 0)
 	}
 	return m
+}
+
+var msgs = map[rune]string{
+	'L': "Locks locked %s",
+	'R': "RLocks locked %s",
+	'l': "Unlocks unlocked %s",
+	'r': "RUnlocks unlocked %s",
 }
 
 func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Func, fi *FuncInfo, depth int) {
@@ -196,7 +201,17 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 					continue
 				}
 				//pass.Reportf(call.Pos(), "%s:%s:%s", cf.Name(), path, next)
-				li[path] = li[path].Then(next)
+				prev := li[path]
+				states := make(map[rune]rune, 2)
+				for i, x := range prev + next {
+					track := []rune(strings.ToUpper(string(x)))[0]
+					old, ok := states[track]
+					states[track] = x
+					if ok && old == x && i >= len(prev) {
+						pass.Reportf(call.Pos(), msgs[x], path.Path())
+					}
+				}
+				li[path] = prev + next
 			}
 		}
 		blockLocks[block] = li
@@ -205,7 +220,7 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 	// TODO: combine blocks properly
 	for _, locks := range blockLocks {
 		for path, lock := range locks {
-			fi.Locks[path] = fi.Locks[path].Then(lock).Simplified()
+			fi.Locks[path] = (fi.Locks[path] + lock).Simplified()
 		}
 	}
 

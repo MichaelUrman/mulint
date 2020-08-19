@@ -74,51 +74,52 @@ func (c *multirMutex) Good5ab() { // want Good5ab:`(c.mus.[01].:"Ll" ?){2}`
 
 func (c *multirMutex) Bad1a() { // want Bad1a:`c.mus.0.:"L"`
 	c.mus[0].Lock()
-	c.mus[0].Lock()
+	c.mus[0].Lock() // want `Locks locked c.mus.0.`
 }
 
 func (c *multirMutex) Bad1b() { // want Bad1b:`c.mus.1.:"L"`
 	c.mus[1].Lock()
-	c.mus[1].Lock()
+	c.mus[1].Lock() // want `Locks locked c.mus.1.`
 }
 
 func (c *multirMutex) Bad1ab() { // want Bad1ab:`(c.mus.[01].:"L" ?){2}`
 	c.mus[0].Lock()
 	c.mus[1].Lock()
-	c.mus[1].Lock()
-	c.mus[0].Lock()
+	c.mus[1].Lock() // want `Locks locked c.mus.1.`
+	c.mus[0].Lock() // want `Locks locked c.mus.0.`
 }
 
 func (c *multirMutex) Bad2a() { // want Bad2a:`c.mus.0.:"L"`
 	c.mus[0].Lock()
-	c.locka()
+	c.locka() // want `Locks locked c.mus.0.`
 }
 
 func (c *multirMutex) Bad2b() { // want Bad2b:`c.mus.1.:"L"`
-	c.mus[1].Lock()
-	c.lockb()
+	b := c.mus[1]
+	b.Lock()
+	c.lockb() // want `Locks locked c.mus.1.`
 }
 
 func (c *multirMutex) Bad2ab() { // want Bad2ab:`(c.mus.[01].:"L" ?){2}`
 	c.mus[0].Lock()
-	c.locka()
+	c.locka() // want `Locks locked c.mus.0.`
 	c.lockb()
-	c.mus[1].Lock()
+	c.mus[1].Lock() // want `Locks locked c.mus.1.`
 }
 
 func (c *multirMutex) Bad3a() { // want Bad3a:`c.mus.0.:"L"`
 	c.locka()
-	c.locka()
+	c.locka() // want `Locks locked c.mus.0.`
 }
 func (c *multirMutex) Bad3b() { // want Bad3b:`c.mus.1.:"L"`
 	c.lockb()
-	c.lockb()
+	c.lockb() // want `Locks locked c.mus.1.`
 }
 func (c *multirMutex) Bad3ab() { // want Bad3ab:`(c.mus.[01].:"L" ?){2}`
 	c.locka()
 	c.lockb()
-	c.lockb()
-	c.locka()
+	c.lockb() // want `Locks locked c.mus.1.`
+	c.locka() // want `Locks locked c.mus.0.`
 }
 
 // iffya locks and unlocks. It's called iffy due to its author's preference to

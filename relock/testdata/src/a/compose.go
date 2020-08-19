@@ -30,17 +30,17 @@ func (c *composeMutex) Good4() { // want Good4:`c.mu:"Ll"`
 
 func (c *composeMutex) Bad1() { // want Bad1:`c.mu:"L"`
 	c.mu.Lock()
-	c.mu.Lock()
+	c.mu.Lock() // want `Locks locked c.mu`
 }
 
 func (c *composeMutex) Bad2() { // want Bad2:`c.mu:"L"`
 	c.mu.Lock()
-	c.lock()
+	c.lock() // want `Locks locked c.mu`
 }
 
 func (c *composeMutex) Bad3() { // want Bad3:`c.mu:"L"`
 	c.lock()
-	c.lock()
+	c.lock() // want `Locks locked c.mu`
 }
 
 // iffy locks and unlocks. It's called iffy due to its author's preference to

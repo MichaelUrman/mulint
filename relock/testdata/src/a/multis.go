@@ -73,51 +73,52 @@ func (c *multisMutex) Good5ab() { // want Good5ab:`(c.[ab]:"Ll" ?){2}`
 
 func (c *multisMutex) Bad1a() { // want Bad1a:`c.a:"L"`
 	c.a.Lock()
-	c.a.Lock()
+	c.a.Lock() // want `Locks locked c.a`
 }
 
 func (c *multisMutex) Bad1b() { // want Bad1b:`c.b:"L"`
 	c.b.Lock()
-	c.b.Lock()
+	c.b.Lock() // want `Locks locked c.b`
 }
 
 func (c *multisMutex) Bad1ab() { // want Bad1ab:`(c.[ab]:"L" ?){2}`
 	c.a.Lock()
 	c.b.Lock()
-	c.b.Lock()
-	c.a.Lock()
+	c.b.Lock() // want `Locks locked c.b`
+	c.a.Lock() // want `Locks locked c.a`
 }
 
 func (c *multisMutex) Bad2a() { // want Bad2a:`c.a:"L"`
 	c.a.Lock()
-	c.locka()
+	c.locka() // want `Locks locked c.a`
 }
 
 func (c *multisMutex) Bad2b() { // want Bad2b:`c.b:"L"`
-	c.b.Lock()
-	c.lockb()
+	b := c.b
+	b.Lock()
+	c.lockb() // want `Locks locked c.b`
 }
 
 func (c *multisMutex) Bad2ab() { // want Bad2ab:`(c.[ab]:"L" ?){2}`
 	c.a.Lock()
-	c.locka()
+	c.locka() // want `Locks locked c.a`
 	c.lockb()
-	c.b.Lock()
+	c.b.Lock() // want `Locks locked c.b`
 }
 
 func (c *multisMutex) Bad3a() { // want Bad3a:`c.a:"L"`
 	c.locka()
-	c.locka()
+	c.locka() // want `Locks locked c.a`
 }
 func (c *multisMutex) Bad3b() { // want Bad3b:`c.b:"L"`
 	c.lockb()
-	c.lockb()
+	c.lockb() // want `Locks locked c.b`
 }
 func (c *multisMutex) Bad3ab() { // want Bad3ab:`(c.[ab]:"L" ?){2}`
 	c.locka()
 	c.lockb()
-	c.lockb()
-	c.locka()
+	c.lockb() // want `Locks locked c.b`
+	c.locka() // want `Locks locked c.a`
 }
 
 // iffya locks and unlocks. It's called iffy due to its author's preference to

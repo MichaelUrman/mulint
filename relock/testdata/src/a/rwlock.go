@@ -30,17 +30,17 @@ func (c *rwMutex) Good4() { // want Good4:`c.mu:"Rr"`
 
 func (c *rwMutex) Bad1() { // want Bad1:`c.mu:"R"`
 	c.mu.RLock()
-	c.mu.RLock()
+	c.mu.RLock() // want `RLocks locked c.mu`
 }
 
 func (c *rwMutex) Bad2() { // want Bad2:`c.mu:"R"`
 	c.mu.RLock()
-	c.lock()
+	c.lock() // want `RLocks locked c.mu`
 }
 
 func (c *rwMutex) Bad3() { // want Bad3:`c.mu:"R"`
 	c.lock()
-	c.lock()
+	c.lock() // want `RLocks locked c.mu`
 }
 
 // iffy locks and unlocks. It's called iffy due to its author's preference to
