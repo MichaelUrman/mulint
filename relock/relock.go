@@ -69,23 +69,21 @@ type LockInfo string
 
 func (li LockInfo) String() string { return `"` + string(li) + `"` }
 
-var thenSimplify = strings.NewReplacer(
-	"LL", "L", "RR", "R",
-	"ll", "l", "rr", "r",
-	"LlL", "L", "RrR", "R",
-	"lLl", "l", "rRr", "r",
-).Replace
+func (a LockInfo) Then(b LockInfo) LockInfo { return a + b }
 
-func (a LockInfo) Then(b LockInfo) LockInfo {
-	c := string(a + b)
-	for {
-		d := thenSimplify(c)
-		if d == c {
-			break
+func (a LockInfo) Simplified() LockInfo {
+	simplify := func(a LockInfo, chars string) LockInfo {
+		first := strings.IndexAny(string(a), chars)
+		if first == -1 {
+			return ""
 		}
-		c = d
+		last := strings.LastIndexAny(string(a), chars)
+		if a[first] == a[last] {
+			return a[first : first+1]
+		}
+		return a[first:first+1] + a[last:last+1]
 	}
-	return LockInfo(c)
+	return simplify(a, "Ll") + simplify(a, "Rr")
 }
 
 var passCt = 0
@@ -207,7 +205,7 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 	// TODO: combine blocks properly
 	for _, locks := range blockLocks {
 		for path, lock := range locks {
-			fi.Locks[path] = fi.Locks[path].Then(lock)
+			fi.Locks[path] = fi.Locks[path].Then(lock).Simplified()
 		}
 	}
 
