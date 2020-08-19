@@ -28,12 +28,13 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// }
 
 	functions := classify(pass)
+	_ = functions
 
-	for fn, info := range functions {
-		for path, lock := range info.Locks {
-			println(fn.String(), path.String(), lock.String())
-		}
-	}
+	// for fn, info := range functions {
+	// 	for path, lock := range info.Locks {
+	// 		println(fn.String(), path.Path(), lock.String())
+	// 	}
+	// }
 
 	return nil, nil
 }
@@ -49,7 +50,7 @@ func (fi FuncInfo) String() string {
 	return fi.Locks.String()
 }
 
-type PathLocker map[Path]LockInfo
+type PathLocker map[Pather]LockInfo
 
 func (p PathLocker) String() string {
 	sb := strings.Builder{}
@@ -57,42 +58,40 @@ func (p PathLocker) String() string {
 		if sb.Len() > 0 {
 			sb.WriteRune(' ')
 		}
-		sb.WriteString(path.String())
+		sb.WriteString(path.Path())
 		sb.WriteRune(':')
 		sb.WriteString(locker.String())
 	}
 	return sb.String()
 }
 
-type LockInfo struct {
-	Locks, Locked     bool // locks or leaves locked
-	Unlocks, Unlocked bool // unlocks or leaves unlocked
+type LockInfo string
+
+func (li LockInfo) String() string { return `"` + string(li) + `"` }
+
+var thenSimplify = strings.NewReplacer(
+	"LL", "L", "RR", "R",
+	"ll", "l", "rr", "r",
+	"LlL", "L", "RrR", "R",
+	"lLl", "l", "rRr", "r",
+).Replace
+
+func (a LockInfo) Then(b LockInfo) LockInfo {
+	c := string(a + b)
+	for {
+		d := thenSimplify(c)
+		if d == c {
+			break
+		}
+		c = d
+	}
+	return LockInfo(c)
 }
 
-func (li LockInfo) String() string {
-	if li.Locks && li.Locked {
-		return "Locker"
-	}
-	if li.Unlocks && li.Unlocked {
-		return "Unlocker"
-	}
-	if li.Locks && li.Unlocked {
-		return "LockUnlocker"
-	}
-	if li.Unlocks && li.Locked {
-		return "UnlockLocker"
-	}
-	l := map[bool]byte{true: 'L', false: '_'}
-	u := map[bool]byte{true: 'U', false: '_'}
-	return string([]byte{
-		l[li.Locks],
-		u[li.Unlocks],
-		u[li.Unlocked],
-		l[li.Locked],
-	})
-}
+var passCt = 0
 
 func classify(pass *analysis.Pass) map[*types.Func]*FuncInfo {
+	passCt++
 	ssa := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 
 	m := make(map[*types.Func]*FuncInfo, len(ssa.SrcFuncs))
@@ -102,44 +101,49 @@ func classify(pass *analysis.Pass) map[*types.Func]*FuncInfo {
 			continue // typically runtime.*
 		}
 		if obj.Type().(*types.Signature).Params().Len() == 0 {
+			var li LockInfo
 			switch obj.Name() {
 			case "Lock":
-				m[obj] = &FuncInfo{
-					Locks: PathLocker{
-						makeRecv(fn, nil): {true, true, false, false},
-					},
-				}
-				pass.ExportObjectFact(obj, m[obj])
-				continue
+				li = "L"
+			case "RLock":
+				li = "R"
 			case "Unlock":
-				m[obj] = &FuncInfo{
+				li = "l"
+			case "RUnlock":
+				li = "r"
+			}
+			if li != "" {
+				fi := &FuncInfo{
 					Locks: PathLocker{
-						makeRecv(fn, nil): {false, false, true, true},
+						FunctionReceiver(fn): li,
 					},
 				}
-				pass.ExportObjectFact(obj, m[obj])
+				pass.ExportObjectFact(obj, fi)
+				m[obj] = fi
 				continue
 			}
 		}
 		m[obj] = &FuncInfo{
 			ssa: fn,
 		}
-
 	}
 
 	for fn, fi := range m {
-		classifyFunc(pass, m, fn, fi)
+		classifyFunc(pass, m, fn, fi, 0)
 	}
 	return m
 }
 
-func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Func, fi *FuncInfo) {
-	if fi.ssa == nil {
-		return // already classified; skip
-	}
+func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Func, fi *FuncInfo, depth int) {
 	if fn == nil {
+		// println("NOPE, nil")
 		return
 	}
+	if fi.ssa == nil {
+		//println("NOPE, passe")
+		return // already classified; skip
+	}
+	// fmt.Printf("CLASSIFY: %*s%s (%s) %t %d %d\n", 2*depth, "", fn.Name(), pass.Fset.Position(fn.Pos()).Filename, fi.ssa == nil, depth, passCt)
 
 	fi.Locks = make(PathLocker)
 
@@ -168,6 +172,8 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 				continue
 			}
 			ci := new(FuncInfo)
+			//fmt.Printf("CLASSIFY-CON: %*s%s (%s) %d %d\n", 2*depth, "", obj.Name(), pass.Fset.Position(fn.Pos()).Filename, depth, passCt)
+
 			if !pass.ImportObjectFact(obj, ci) {
 				cfn := obj.(*types.Func)
 				var ok bool
@@ -184,18 +190,22 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 					// println("RECURSE", cfn.String(), "to", call.String())
 					continue // assume uninteresting
 				}
-				classifyFunc(pass, m, call.Call.Method, ci)
-				println("REC", fn.Name(), "classifyFunc", cfn.Name(), ci.Locks.String())
+				//println("ENTER", fn.Name(), "classifyFunc", cfn.Name(), depth+1)
+				classifyFunc(pass, m, cfn, ci, depth+1)
+				//println("EXIT", fn.Name(), "classifyFunc", cfn.Name(), ci.Locks.String())
+			} else {
+				//println("IMP", fn.Name(), "classifyFunc", obj.Name(), ci.Locks.String())
 			}
 			for path, next := range ci.Locks {
-				print("CONVERT ", fn.FullName(), ": ", path.String())
-				path := path.ToCaller(fi.ssa, call)
+				// print("CONVERT ", fn.FullName(), ": ", path.Path())
+				path := CallerPath(path, fi.ssa, call)
 				if path == nil {
-					println(" TO NIL")
+					// println(" TO NIL")
 					continue
 				}
-				println(" TO", path.String())
-				li[path] = combineLockInfo(li[path], next)
+				// println(" TO", path.Path())
+				//pass.Reportf(call.Pos(), "%s:%s:%s", cf.Name(), path, next)
+				li[path] = li[path].Then(next)
 			}
 		}
 		blockLocks[block] = li
@@ -204,24 +214,16 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 	// TODO: combine blocks properly
 	for _, locks := range blockLocks {
 		for path, lock := range locks {
-			fi.Locks[path] = combineLockInfo(fi.Locks[path], lock)
+			fi.Locks[path] = fi.Locks[path].Then(lock)
 		}
 	}
 
-	for path, lock := range fi.Locks {
-		println("FUNC", path.String(), lock.String())
-	}
+	// for path, lock := range fi.Locks {
+	// 	println("FUNC", path.Path(), lock.String())
+	// }
 	if len(fi.Locks) > 0 {
 		pass.ExportObjectFact(fi.ssa.Object().(*types.Func), fi)
 	}
 
 	fi.ssa = nil
-}
-
-func combineLockInfo(prev, next LockInfo) LockInfo {
-	prev.Locks = prev.Locks || (next.Locks && !prev.Unlocks)
-	prev.Unlocks = prev.Unlocks || (next.Unlocks && !prev.Locks)
-	prev.Unlocked = prev.Unlocked && !next.Locks || next.Unlocked
-	prev.Locked = prev.Locked && !next.Unlocks || next.Locked
-	return prev
 }
