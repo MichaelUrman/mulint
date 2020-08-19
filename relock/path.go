@@ -38,18 +38,20 @@ func makePath(param ssa.Value, scope *ssa.Function, pos ssa.Instruction, subpath
 	switch param := param.(type) {
 	case *ssa.Global:
 		return GlobalPath(param.Object().Pkg().Path() + ":" + param.Object().Name() + subpath)
+
 	case *ssa.Parameter:
 		if scope.Signature.Recv() != nil && param == scope.Params[0] {
 			return RecvPath(scope.Object().(*types.Func).Type().(*types.Signature).Recv().Name() + subpath)
 		}
 		return ParamPath(param.Name() + subpath)
+
 	case *ssa.FieldAddr:
 		subpath = "." + param.X.
 			Type().Underlying().(*types.Pointer).
 			Elem().Underlying().(*types.Struct).
 			Field(param.Field).Name() + subpath
-
 		return makePath(param.X, scope, pos, subpath, makeCtx+"_FA")
+
 	case *ssa.Alloc:
 		var lastBefore ssa.Value
 		var lastBlock *ssa.BasicBlock
@@ -82,15 +84,15 @@ func makePath(param ssa.Value, scope *ssa.Function, pos ssa.Instruction, subpath
 		}
 		if lastBefore != nil {
 			return makePath(lastBefore, scope, pos, subpath, makeCtx+"_ALLOC")
-
 		}
-		println()
 
 	case *ssa.IndexAddr:
 		subpath = makeIndex(param.Index, makeCtx+"_IA") + subpath
 		return makePath(param.X, scope, pos, subpath, makeCtx+"_IA")
+
 	case *ssa.UnOp:
 		return makePath(param.X, scope, pos, subpath, makeCtx+"_UN")
+
 	case *ssa.Index:
 		subpath = makeIndex(param.Index, makeCtx+"_IN") + subpath
 		return makePath(param.X, scope, pos, subpath, makeCtx+"_IN")
@@ -105,6 +107,7 @@ func makeIndex(index ssa.Value, makeCtx string) string {
 	switch index := index.(type) {
 	case *ssa.Const:
 		return "[" + index.Value.String() + "]"
+
 	default:
 		println("MI+", makeCtx, reflect.TypeOf(index).String())
 		return ""

@@ -96,7 +96,8 @@ func classify(pass *analysis.Pass) map[*types.Func]*FuncInfo {
 		if !ok {
 			continue // typically runtime.*
 		}
-		if obj.Type().(*types.Signature).Params().Len() == 0 {
+		sig := obj.Type().(*types.Signature)
+		if sig.Params().Len() == 0 && sig.Results().Len() == 0 {
 			var li LockInfo
 			switch obj.Name() {
 			case "Lock":
