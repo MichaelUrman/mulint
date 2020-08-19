@@ -12,7 +12,7 @@ type Pather interface {
 	Path() string
 }
 
-func CallerPath(path Pather, caller *ssa.Function, callee *ssa.Call) Pather {
+func CallerPath(path Pather, caller *ssa.Function, callee ssa.Instruction) Pather {
 	switch path := path.(type) {
 	case GlobalPath:
 		return path

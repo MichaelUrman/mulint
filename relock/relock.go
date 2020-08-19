@@ -163,56 +163,46 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 
 	// look for calls to classified functions
 	for _, block := range fi.ssa.Blocks {
+		defers := make(map[Pather][]ssa.Instruction)
+		deferred := make(PathLocker)
 		li := make(PathLocker)
 		for _, inst := range block.Instrs {
-			call, ok := inst.(*ssa.Call)
-			if !ok {
-				continue
-			}
-
-			cf, ok := call.Call.Value.(*ssa.Function)
-			if !ok || cf == nil {
-				continue
-			}
-			obj := cf.Object()
-			if obj == nil {
-				continue
-			}
-			ci := new(FuncInfo)
-
-			if !pass.ImportObjectFact(obj, ci) {
-				cfn := obj.(*types.Func)
-				var ok bool
-				ci, ok = m[cfn]
-				if !ok {
-					continue // assume uninteresting
-				}
-				if cfn == nil {
-					println("NILFN", call.String())
+			switch inst := inst.(type) {
+			case *ssa.Call:
+				ci := classifyCall(pass, inst, inst.Call, m, depth)
+				if ci == nil {
 					continue
 				}
-				if ci.ssa != nil && ci.Locks != nil {
-					continue // assume uninteresting
-				}
-				classifyFunc(pass, m, cfn, ci, depth+1)
-			}
-			for path, next := range ci.Locks {
-				path := CallerPath(path, fi.ssa, call)
-				if path == nil {
-					continue
-				}
-				//pass.Reportf(call.Pos(), "%s:%s:%s", cf.Name(), path, next)
-				prev := li[path]
-				states := make(map[rune]rune, 2)
-				for i, x := range prev + next {
-					track := []rune(strings.ToUpper(string(x)))[0]
-					old, ok := states[track]
-					states[track] = x
-					if ok && old == x && i >= len(prev) {
-						pass.Reportf(call.Pos(), msgs[x], path.Path())
+				for path, next := range ci.Locks {
+					path := CallerPath(path, fi.ssa, inst)
+					if path == nil {
+						continue
 					}
+					li[path] = combineLocks(pass, inst, nil, path, li[path], next)
 				}
-				li[path] = prev + next
+			case *ssa.Defer:
+				ci := classifyCall(pass, inst, inst.Call, m, depth)
+				if ci == nil {
+					continue
+				}
+				for path, prev := range ci.Locks {
+					path := CallerPath(path, fi.ssa, inst)
+					if path == nil {
+						continue
+					}
+					deferred[path] = prev + deferred[path]
+					insts := make([]ssa.Instruction, len(prev))
+					for i := range insts {
+						insts[i] = inst
+					}
+					defers[path] = append(insts, defers[path]...)
+				}
+			case *ssa.RunDefers:
+				for path, next := range deferred {
+					li[path] = combineLocks(pass, inst, defers[path], path, li[path], next)
+				}
+			default:
+				//println("INSTR", reflect.TypeOf(inst).String(), inst.String())
 			}
 		}
 		blockLocks[block] = li
@@ -230,4 +220,50 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 	}
 
 	fi.ssa = nil
+}
+
+func classifyCall(pass *analysis.Pass, inst ssa.Instruction, call ssa.CallCommon, m map[*types.Func]*FuncInfo, depth int) *FuncInfo {
+	cf, ok := call.Value.(*ssa.Function)
+	if !ok || cf == nil {
+		return nil
+	}
+	obj := cf.Object()
+	if obj == nil {
+		return nil
+	}
+	ci := new(FuncInfo)
+
+	if !pass.ImportObjectFact(obj, ci) {
+		cfn := obj.(*types.Func)
+		var ok bool
+		ci, ok = m[cfn]
+		if !ok {
+			return nil // assume uninteresting
+		}
+		if cfn == nil {
+			println("NILFN", inst.String())
+			return nil
+		}
+		if ci.ssa != nil && ci.Locks != nil {
+			return nil // assume uninteresting
+		}
+		classifyFunc(pass, m, cfn, ci, depth+1)
+	}
+	return ci
+}
+
+func combineLocks(pass *analysis.Pass, inst ssa.Instruction, insts []ssa.Instruction, path Pather, prev, next LockInfo) LockInfo {
+	states := make(map[rune]rune, 2)
+	for i, x := range prev + next {
+		track := []rune(strings.ToUpper(string(x)))[0]
+		old, ok := states[track]
+		states[track] = x
+		if ok && old == x && i >= len(prev) {
+			if insts != nil {
+				inst = insts[i-len(prev)]
+			}
+			pass.Reportf(inst.Pos(), msgs[x], path.Path())
+		}
+	}
+	return prev + next
 }
