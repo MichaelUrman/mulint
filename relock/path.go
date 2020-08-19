@@ -51,26 +51,38 @@ func makePath(param ssa.Value, scope *ssa.Function, pos ssa.Instruction, subpath
 
 		return makePath(param.X, scope, pos, subpath, makeCtx+"_FA")
 	case *ssa.Alloc:
+		var lastBefore ssa.Value
+		var lastBlock *ssa.BasicBlock
 		for _, ref := range *param.Referrers() {
-			if ref.Block() == pos.Block() {
-				if ref.Pos() >= pos.Pos() {
-					continue
+			// ref block should be between last and pos (inclusive)
+			blockOK := ref.Block().Dominates(pos.Block())
+			if lastBlock != nil {
+				blockOK = blockOK && lastBlock.Dominates(ref.Block())
+			}
+			// ref instr should be between last and pos (exclusive)
+			instrOK := ref.Pos() < pos.Pos() || ref.Block() != pos.Block()
+			if lastBlock != nil {
+				if lastBlock != ref.Block() {
+					instrOK = instrOK && lastBlock.Dominates(ref.Block())
+				} else {
+					instrOK = instrOK && lastBefore.Pos() < ref.Pos()
 				}
+			}
+			if blockOK && instrOK {
 				switch ref := ref.(type) {
 				case *ssa.Call: // ignore
+				case *ssa.UnOp: // ignore
 				case *ssa.Store:
-					return makePath(ref.Val, scope, pos, subpath, makeCtx+"_ALLOCSTORE")
+					lastBefore = ref.Val
+					lastBlock = ref.Block()
 				default:
 					println("ALLOC REF", reflect.TypeOf(ref).String(), ref.String())
 				}
-				for _, inst := range ref.Block().Instrs {
-					if inst == pos {
-						break
-					}
-
-				}
 			}
-			println("RECV: *ssa.Alloc ref", ref.String(), reflect.TypeOf(ref).String(), ref.Pos(), pos.Pos())
+		}
+		if lastBefore != nil {
+			return makePath(lastBefore, scope, pos, subpath, makeCtx+"_ALLOC")
+
 		}
 		println()
 
