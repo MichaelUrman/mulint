@@ -26,67 +26,77 @@ func CallerPath(path Pather, caller *ssa.Function, callee *ssa.Call) Pather {
 			return nil
 		}
 
-		switch param := (*ops[1]).(type) {
-		case *ssa.Global:
-			return GlobalPath(param.Object().Pkg().Path() + ":" + param.Object().Name() + subpath)
-		case *ssa.Parameter:
-			if caller.Signature.Recv() != nil && param == caller.Params[0] {
-				return path
-			}
-			return ParamPath(param.Name() + subpath)
-		case *ssa.FieldAddr:
-			subpath = "." + param.X.
-				Type().Underlying().(*types.Pointer).
-				Elem().Underlying().(*types.Struct).
-				Field(param.Field).Name() + subpath
-
-			switch oparam := param.X.(type) {
-			case *ssa.Parameter:
-				if caller.Signature.Recv() != nil && oparam == caller.Params[0] {
-					return RecvPath(oparam.Name() + subpath)
-				}
-			default:
-				println("FA", reflect.TypeOf(param.X).String(), param.String())
-				return FieldAddrPath(oparam.Name() + subpath)
-			}
-		case *ssa.IndexAddr:
-			var subpath string
-			switch index := param.Index.(type) {
-			case *ssa.Const:
-				subpath = "[" + index.Value.String() + "]"
-			default:
-				println("IA INDEX", reflect.TypeOf(index).String())
-				return nil
-			}
-
-			switch indexed := param.X.(type) {
-			case *ssa.FieldAddr:
-				subpath = "." + indexed.X.
-					Type().Underlying().(*types.Pointer).
-					Elem().Underlying().(*types.Struct).
-					Field(indexed.Field).Name() + subpath
-
-				switch oparam := indexed.X.(type) {
-				case *ssa.Parameter:
-					if caller.Signature.Recv() != nil && oparam == caller.Params[0] {
-						return RecvPath(oparam.Name() + subpath)
-					}
-				default:
-					println("IA FA", reflect.TypeOf(param.X).String(), param.String())
-					return FieldAddrPath(oparam.Name() + subpath)
-				}
-				return FieldAddrPath(indexed.Name() + subpath)
-			default:
-				println("IA", reflect.TypeOf(param.X).String(), param.String())
-				return IndexAddrPath(indexed.Name() + subpath)
-			}
-		default:
-			println("RECV", reflect.TypeOf(param).String(), param.String())
-		}
+		return makePath(*ops[1], caller, callee, subpath, "")
 	default:
-		println("PATHER", reflect.TypeOf(path).String())
+		println("PATHER", reflect.TypeOf(path).String(), path.Path())
+		return nil
+	}
+}
+
+func makePath(param ssa.Value, scope *ssa.Function, pos ssa.Instruction, subpath string, makeCtx string) Pather {
+	// scope = caller
+	switch param := param.(type) {
+	case *ssa.Global:
+		return GlobalPath(param.Object().Pkg().Path() + ":" + param.Object().Name() + subpath)
+	case *ssa.Parameter:
+		if scope.Signature.Recv() != nil && param == scope.Params[0] {
+			return RecvPath(scope.Object().(*types.Func).Type().(*types.Signature).Recv().Name() + subpath)
+		}
+		return ParamPath(param.Name() + subpath)
+	case *ssa.FieldAddr:
+		subpath = "." + param.X.
+			Type().Underlying().(*types.Pointer).
+			Elem().Underlying().(*types.Struct).
+			Field(param.Field).Name() + subpath
+
+		return makePath(param.X, scope, pos, subpath, makeCtx+"_FA")
+	case *ssa.Alloc:
+		for _, ref := range *param.Referrers() {
+			if ref.Block() == pos.Block() {
+				if ref.Pos() >= pos.Pos() {
+					continue
+				}
+				switch ref := ref.(type) {
+				case *ssa.Call: // ignore
+				case *ssa.Store:
+					return makePath(ref.Val, scope, pos, subpath, makeCtx+"_ALLOCSTORE")
+				default:
+					println("ALLOC REF", reflect.TypeOf(ref).String(), ref.String())
+				}
+				for _, inst := range ref.Block().Instrs {
+					if inst == pos {
+						break
+					}
+
+				}
+			}
+			println("RECV: *ssa.Alloc ref", ref.String(), reflect.TypeOf(ref).String(), ref.Pos(), pos.Pos())
+		}
+		println()
+
+	case *ssa.IndexAddr:
+		subpath = makeIndex(param.Index, makeCtx+"_IA") + subpath
+		return makePath(param.X, scope, pos, subpath, makeCtx+"_IA")
+	case *ssa.UnOp:
+		return makePath(param.X, scope, pos, subpath, makeCtx+"_UN")
+	case *ssa.Index:
+		subpath = makeIndex(param.Index, makeCtx+"_IN") + subpath
+		return makePath(param.X, scope, pos, subpath, makeCtx+"_IN")
+
+	default:
+		println("MP", makeCtx, reflect.TypeOf(param).String(), param.String())
 	}
 	return nil
+}
+
+func makeIndex(index ssa.Value, makeCtx string) string {
+	switch index := index.(type) {
+	case *ssa.Const:
+		return "[" + index.Value.String() + "]"
+	default:
+		println("MI+", makeCtx, reflect.TypeOf(index).String())
+		return ""
+	}
 }
 
 type RecvPath string

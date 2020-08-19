@@ -48,6 +48,29 @@ func (c *multisMutex) Good4ba() { // want Good4ba:`(c.[ab]:"Ll" ?){2}`
 	c.iffya()
 }
 
+func (c *multisMutex) Good5a() { // want Good5a:`c.a:"Ll"`
+	a := c.a
+	a.Lock()
+	a.Unlock()
+}
+
+func (c *multisMutex) Good5axx() { // want Good5axx:`c.a:"Ll"`
+	d := c
+	b := d.a
+	a := b
+	a.Lock()
+	a.Unlock()
+}
+
+func (c *multisMutex) Good5ab() { // want Good5ab:`(c.[ab]:"Ll" ?){2}`
+	a := c.a
+	b := c.b
+	a.Lock()
+	b.Lock()
+	b.Unlock()
+	a.Unlock()
+}
+
 func (c *multisMutex) Bad1a() { // want Bad1a:`c.a:"L"`
 	c.a.Lock()
 	c.a.Lock()

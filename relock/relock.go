@@ -136,14 +136,17 @@ func classify(pass *analysis.Pass) map[*types.Func]*FuncInfo {
 
 func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Func, fi *FuncInfo, depth int) {
 	if fn == nil {
-		// println("NOPE, nil")
 		return
 	}
 	if fi.ssa == nil {
-		//println("NOPE, passe")
 		return // already classified; skip
 	}
-	// fmt.Printf("CLASSIFY: %*s%s (%s) %t %d %d\n", 2*depth, "", fn.Name(), pass.Fset.Position(fn.Pos()).Filename, fi.ssa == nil, depth, passCt)
+
+	// if fn.Name() == "Good5" {
+	// 	buf := &bytes.Buffer{}
+	// 	ssa.WriteFunction(buf, fi.ssa)
+	// 	print(string(buf.Bytes()))
+	// }
 
 	fi.Locks = make(PathLocker)
 
@@ -172,14 +175,12 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 				continue
 			}
 			ci := new(FuncInfo)
-			//fmt.Printf("CLASSIFY-CON: %*s%s (%s) %d %d\n", 2*depth, "", obj.Name(), pass.Fset.Position(fn.Pos()).Filename, depth, passCt)
 
 			if !pass.ImportObjectFact(obj, ci) {
 				cfn := obj.(*types.Func)
 				var ok bool
 				ci, ok = m[cfn]
 				if !ok {
-					// println("NOT TRACKED", call.String())
 					continue // assume uninteresting
 				}
 				if cfn == nil {
@@ -187,23 +188,15 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 					continue
 				}
 				if ci.ssa != nil && ci.Locks != nil {
-					// println("RECURSE", cfn.String(), "to", call.String())
 					continue // assume uninteresting
 				}
-				//println("ENTER", fn.Name(), "classifyFunc", cfn.Name(), depth+1)
 				classifyFunc(pass, m, cfn, ci, depth+1)
-				//println("EXIT", fn.Name(), "classifyFunc", cfn.Name(), ci.Locks.String())
-			} else {
-				//println("IMP", fn.Name(), "classifyFunc", obj.Name(), ci.Locks.String())
 			}
 			for path, next := range ci.Locks {
-				// print("CONVERT ", fn.FullName(), ": ", path.Path())
 				path := CallerPath(path, fi.ssa, call)
 				if path == nil {
-					// println(" TO NIL")
 					continue
 				}
-				// println(" TO", path.Path())
 				//pass.Reportf(call.Pos(), "%s:%s:%s", cf.Name(), path, next)
 				li[path] = li[path].Then(next)
 			}
@@ -218,9 +211,6 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 		}
 	}
 
-	// for path, lock := range fi.Locks {
-	// 	println("FUNC", path.Path(), lock.String())
-	// }
 	if len(fi.Locks) > 0 {
 		pass.ExportObjectFact(fi.ssa.Object().(*types.Func), fi)
 	}
