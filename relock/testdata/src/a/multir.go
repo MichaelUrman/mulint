@@ -63,15 +63,6 @@ func (c *multirMutex) Good5ab() { // want Good5ab:`(c.mus.[01].:"Ll" ?){2}`
 	a.Unlock()
 }
 
-// func (c *multirMutex) Good6() { // wa-nt Good6:`(c.mus.[01].:"Ll" ?){2}`
-// 	for _, x := range c.mus {
-// 		x.Lock()
-// 	}
-// 	for _, x := range c.mus {
-// 		x.Unlock()
-// 	}
-// }
-
 func (c *multirMutex) Bad1a() { // want Bad1a:`c.mus.0.:"L"`
 	c.mus[0].Lock()
 	c.mus[0].Lock() // want `Locks locked c.mus.0.`

@@ -98,7 +98,7 @@ func makePath(param ssa.Value, scope *ssa.Function, pos ssa.Instruction, subpath
 		return makePath(param.X, scope, pos, subpath, makeCtx+"_IN")
 
 	default:
-		println("MP", makeCtx, reflect.TypeOf(param).String(), param.String())
+		println(scope.String(), "MP", makeCtx, reflect.TypeOf(param).String(), param.String())
 	}
 	return nil
 }
