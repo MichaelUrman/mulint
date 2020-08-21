@@ -26,7 +26,7 @@ func (branches) Good2(which bool) { // want Good2:`b:mu:"Ll"`
 	}
 }
 
-func (branches) Good3(which bool) { // want Good3:`b:mu:"Ll"`
+func (branches) Good3(which bool) { // want Good3:`b:mu:"L[|]l"`
 	if which {
 		mu.Lock()
 	} else {

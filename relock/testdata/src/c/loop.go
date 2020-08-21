@@ -36,3 +36,19 @@ func (loops) Stretch4() { // -want Stretch4:`(mus.[012].:"Ll" ?){3}`
 		x.Unlock()
 	}
 }
+
+func (loops) Stretch5() { // want Stretch5:`mu:"Ll"`
+	var mu sync.Mutex
+	for i := 0; i < 3; i++ {
+		mu.Lock()
+		mu.Unlock()
+	}
+}
+
+func (loops) Stretch5() { // want Stretch5:`mu:"Ll"`
+	var mu sync.Mutex
+	for i := 0; i < 3; i++ {
+		mu.Lock() // want `Locks locked mu`
+		defer mu.Unlock()
+	}
+}

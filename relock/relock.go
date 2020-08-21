@@ -2,6 +2,7 @@ package relock
 
 import (
 	"go/types"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -70,18 +71,32 @@ type LockInfo string
 func (li LockInfo) String() string { return `"` + string(li) + `"` }
 
 func (a LockInfo) Simplified() LockInfo {
-	simplify := func(a LockInfo, chars string) LockInfo {
-		first := strings.IndexAny(string(a), chars)
+	simplify := func(a, chars string) string {
+		first := strings.IndexAny(a, chars)
 		if first == -1 {
 			return ""
 		}
-		last := strings.LastIndexAny(string(a), chars)
+		last := strings.LastIndexAny(a, chars)
 		if a[first] == a[last] {
 			return a[first : first+1]
 		}
 		return a[first:first+1] + a[last:last+1]
 	}
-	return simplify(a, "Ll") + simplify(a, "Rr")
+
+	srcs := strings.Split(strings.Trim(string(a), "|"), "|")
+	for i, src := range srcs {
+		srcs[i] = simplify(src, "Ll") + simplify(src, "Rr")
+	}
+	sort.Strings(srcs)
+	i := 0
+	for j := 1; j < len(srcs); j++ {
+		if srcs[j] != srcs[i] {
+			i++
+			srcs[i] = srcs[j]
+		}
+	}
+	srcs = srcs[:i+1]
+	return LockInfo(strings.Join(srcs, "|"))
 }
 
 var passCt = 0
@@ -139,12 +154,10 @@ var msgs = map[rune]string{
 }
 
 func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Func, fi *FuncInfo, depth int) {
-	if fn == nil {
+	if fn == nil || fi.ssa == nil || len(fi.ssa.Blocks) == 0 {
 		return
 	}
-	if fi.ssa == nil {
-		return // already classified; skip
-	}
+	defer func() { fi.ssa = nil }()
 
 	// if fn.Name() == "Good5" {
 	// 	buf := &bytes.Buffer{}
@@ -208,18 +221,65 @@ func classifyFunc(pass *analysis.Pass, m map[*types.Func]*FuncInfo, fn *types.Fu
 		blockLocks[block] = li
 	}
 
+	if len(blockLocks) == 0 {
+		return
+	}
+
 	// TODO: combine blocks properly
-	for _, locks := range blockLocks {
-		for path, lock := range locks {
-			fi.Locks[path] = (fi.Locks[path] + lock).Simplified()
+	type transition struct{ From, To *ssa.BasicBlock }
+	type graph struct {
+		Block *ssa.BasicBlock
+		Locks PathLocker
+	}
+
+	mergeBlockLocks := func(p, n int, at, next PathLocker) PathLocker {
+		elts := len(at)
+		for elt := range next {
+			if _, ok := at[elt]; !ok {
+				elts++
+			}
+		}
+		m := make(PathLocker, elts)
+		for path, locks := range at {
+			m[path] = locks
+		}
+		for path, locks := range next {
+			m[path] += locks
+		}
+		return m
+	}
+
+	seen := make(map[transition]int)
+	queue := []graph{{Block: &ssa.BasicBlock{Succs: []*ssa.BasicBlock{fi.ssa.Blocks[0]}}}}
+	for len(queue) > 0 {
+		at := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		queued := false
+		for _, next := range at.Block.Succs {
+			t := transition{at.Block, next}
+			count := seen[t]
+			if count < 2 {
+				seen[t]++
+				queued = true
+				queue = append(queue, graph{
+					Block: next,
+					Locks: mergeBlockLocks(at.Block.Index, next.Index, at.Locks, blockLocks[next]),
+				})
+			}
+		}
+		if !queued {
+			for path, locks := range at.Locks {
+				fi.Locks[path] += "|" + locks
+			}
 		}
 	}
 
+	for path, lock := range fi.Locks {
+		fi.Locks[path] = lock.Simplified()
+	}
 	if len(fi.Locks) > 0 {
 		pass.ExportObjectFact(fi.ssa.Object().(*types.Func), fi)
 	}
-
-	fi.ssa = nil
 }
 
 func classifyCall(pass *analysis.Pass, inst ssa.Instruction, call ssa.CallCommon, m map[*types.Func]*FuncInfo, depth int) *FuncInfo {
